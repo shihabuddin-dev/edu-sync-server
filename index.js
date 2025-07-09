@@ -37,6 +37,7 @@ async function run() {
     const db = client.db("eduSyncDB");
     const usersCollection = db.collection("users");
     const notesCollection = db.collection("notes");
+    const sessionsCollection = db.collection("sessions");
 
     // custom middlewares
     const verifyFBToken = async (req, res, next) => {
@@ -193,6 +194,32 @@ async function run() {
       } catch (error) {
         console.error('Error updating note:', error);
         res.status(500).send({ message: 'Failed to update note' });
+      }
+    });
+
+    // GET: Study session
+    app.get('/sessions', async (req, res) => {
+      const result = await sessionsCollection.find().toArray()
+      res.send(result)
+    })
+
+    // POST: Create a new study session
+    app.post('/sessions', async (req, res) => {
+      try {
+        const session = req.body;
+        // Basic validation
+        if (!session.title || !session.tutorName || !session.tutorEmail || !session.description || !session.registrationStart || !session.registrationEnd || !session.classStart || !session.classEnd || !session.duration) {
+          return res.status(400).send({ message: 'Missing required fields' });
+        }
+        // Set defaults if not provided
+        if (!session.registrationFee) session.registrationFee = 0;
+        if (!session.status) session.status = 'pending';
+        session.created_at = session.created_at || new Date().toISOString();
+        const result = await sessionsCollection.insertOne(session);
+        res.send({ success: true, sessionId: result.insertedId });
+      } catch (error) {
+        console.error('Error creating session:', error);
+        res.status(500).send({ message: 'Failed to create session' });
       }
     });
 
