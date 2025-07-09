@@ -37,19 +37,19 @@ async function run() {
     const db = client.db("eduSyncDB");
     const usersCollection = db.collection("users");
 
- // custom middlewares
- const verifyFBToken = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).send({ message: 'unauthorized access' })
-  }
-  const token = authHeader.split(' ')[1];
-  if (!token) {
-    return res.status(401).send({ message: 'unauthorized access' })
-  }
+    // custom middlewares
+    const verifyFBToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).send({ message: 'unauthorized access' })
+      }
+      const token = authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(401).send({ message: 'unauthorized access' })
+      }
 
 
- // verify the token
+      // verify the token
       try {
         const decoded = await admin.auth().verifyIdToken(token);
         req.decoded = decoded;
@@ -80,8 +80,8 @@ async function run() {
       next();
     }
 
-     // GET: Get user role by email
-     app.get('/users/:email/role', async (req, res) => {
+    // GET: Get user role by email
+    app.get('/users/:email/role', async (req, res) => {
       try {
         const email = req.params.email;
         if (!email) {
@@ -91,17 +91,44 @@ async function run() {
         if (!user) {
           return res.status(404).send({ message: 'User not found' });
         }
-        res.send({ role: user.role || 'user' });
+        res.send({ role: user.role || 'student' });
       } catch (error) {
         console.error('Error getting user role:', error);
         res.status(500).send({ message: 'Failed to get role' });
       }
     });
 
-    app.get('/users', async(req, res)=>{
-      const result= await usersCollection.find().toArray()
+
+    // users api
+    app.get('/users', async (req, res) => {
+      const result = await usersCollection.find().toArray()
       res.send(result)
     })
+
+    // Add or update the POST /users endpoint to enforce default role 'student'
+    app.post('/users', async (req, res) => {
+      try {
+        const userData = req.body;
+        if (!userData.email) {
+          return res.status(400).send({ message: 'Email is required' });
+        }
+        // Set default role to 'student' if not provided
+        if (!userData.role) {
+          userData.role = 'student';
+        }
+        // Upsert user (update if exists, insert if not)
+        const result = await usersCollection.updateOne(
+          { email: userData.email },
+          { $setOnInsert: userData },
+          { upsert: true }
+        );
+        res.send({ success: true, result });
+      } catch (error) {
+        console.error('Error creating user:', error);
+        res.status(500).send({ message: 'Failed to create user' });
+      }
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
