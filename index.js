@@ -36,6 +36,7 @@ async function run() {
     // Database collections
     const db = client.db("eduSyncDB");
     const usersCollection = db.collection("users");
+    const notesCollection = db.collection("notes");
 
     // custom middlewares
     const verifyFBToken = async (req, res, next) => {
@@ -47,7 +48,6 @@ async function run() {
       if (!token) {
         return res.status(401).send({ message: 'unauthorized access' })
       }
-
 
       // verify the token
       try {
@@ -83,7 +83,7 @@ async function run() {
     // GET: Get user role by email
     app.get('/users/:email/role', async (req, res) => {
       try {
-        const email = req.params.email;
+        const { email } = req.params;
         if (!email) {
           return res.status(400).send({ message: 'Email is required' });
         }
@@ -126,6 +126,73 @@ async function run() {
       } catch (error) {
         console.error('Error creating user:', error);
         res.status(500).send({ message: 'Failed to create user' });
+      }
+    });
+
+    // GET: Get notes api
+    // verifyFBToken
+    app.get('/notes', async (req, res) => {
+      const { email } = req.query;
+      if (!email) {
+        return res.status(400).send({ message: 'Email query parameter is required' });
+      }
+      const result = await notesCollection.find({ email }).toArray();
+      res.send(result);
+    });
+
+    // POST: Create a new note
+    app.post('/notes', async (req, res) => {
+      try {
+        const { email, title, description, created_at } = req.body;
+        if (!email || !title || !description) {
+          return res.status(400).send({ message: 'Email, title, and description are required' });
+        }
+        const note = { email, title, description, created_at: created_at || new Date().toISOString() };
+        const result = await notesCollection.insertOne(note);
+        res.send({ success: true, noteId: result.insertedId });
+      } catch (error) {
+        console.error('Error creating note:', error);
+        res.status(500).send({ message: 'Failed to create note' });
+      }
+    });
+
+    // DELETE: Delete a note by ID
+    app.delete('/notes/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await notesCollection.deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: 'Note not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        console.error('Error deleting note:', error);
+        res.status(500).send({ message: 'Failed to delete note' });
+      }
+    });
+
+    // PATCH: Update a note by ID
+    app.patch('/notes/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { title, description } = req.body;
+        if (!title && !description) {
+          return res.status(400).send({ message: 'Nothing to update' });
+        }
+        const updateDoc = {};
+        if (title) updateDoc.title = title;
+        if (description) updateDoc.description = description;
+        const result = await notesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateDoc }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Note not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        console.error('Error updating note:', error);
+        res.status(500).send({ message: 'Failed to update note' });
       }
     });
 
