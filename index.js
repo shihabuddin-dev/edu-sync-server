@@ -38,6 +38,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const notesCollection = db.collection("notes");
     const sessionsCollection = db.collection("sessions");
+    const materialsCollection = db.collection("materials");
 
     // custom middlewares
     const verifyFBToken = async (req, res, next) => {
@@ -300,7 +301,88 @@ async function run() {
       }
     });
 
+    // **materials**
+    // CREATE: Upload a new material for a session
+    app.post('/materials', async (req, res) => {
+      try {
+        const { title, sessionId, tutorEmail, imageUrl, resourceLink } = req.body;
+        if (!title || !sessionId || !tutorEmail || !imageUrl || !resourceLink) {
+          return res.status(400).send({ message: 'All fields are required' });
+        }
+        const material = {
+          title,
+          sessionId, // string, references the study session
+          tutorEmail, // string, the tutor's email
+          imageUrl,   // string, link to image (e.g. from ImgBB)
+          resourceLink, // string, Google Drive link
+          created_at: new Date().toISOString(),
+        };
+        const result = await materialsCollection.insertOne(material);
+        res.send({ success: true, materialId: result.insertedId });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to upload material' });
+      }
+    });
 
+    // READ: Get all materials, or filter by sessionId or tutorEmail
+    app.get('/materials', async (req, res) => {
+      try {
+        const { sessionId, tutorEmail } = req.query;
+        const query = {};
+        if (sessionId) query.sessionId = sessionId;
+        if (tutorEmail) query.tutorEmail = tutorEmail;
+        const materials = await materialsCollection.find(query).toArray();
+        res.send(materials);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch materials' });
+      }
+    });
+
+    // READ: Get a single material by ID
+    app.get('/materials/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const material = await materialsCollection.findOne({ _id: new ObjectId(id) });
+        if (!material) {
+          return res.status(404).send({ message: 'Material not found' });
+        }
+        res.send(material);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch material' });
+      }
+    });
+
+    // UPDATE: Update a material by ID
+    app.put('/materials/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        const result = await materialsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Material not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update material' });
+      }
+    });
+
+    // DELETE: Delete a material by ID
+    app.delete('/materials/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await materialsCollection.deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: 'Material not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to delete material' });
+      }
+    });
 
 
     // **End Of The API**
