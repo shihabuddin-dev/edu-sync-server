@@ -81,6 +81,7 @@ async function run() {
       next();
     }
 
+    // **User**
     // GET: Get user role by email
     app.get('/users/:email/role', async (req, res) => {
       try {
@@ -130,9 +131,11 @@ async function run() {
       }
     });
 
+    // **Notes**
+
     // GET: Get notes api
     // verifyFBToken
-    app.get('/notes', async (req, res) => {
+    app.get('/notes', verifyFBToken, async (req, res) => {
       const { email } = req.query;
       if (!email) {
         return res.status(400).send({ message: 'Email query parameter is required' });
@@ -197,11 +200,20 @@ async function run() {
       }
     });
 
-    // GET: Study session
+
+    // **Sessions**
+
+    // GET: Get all sessions for a tutor by email
+    // verifyFBToken
     app.get('/sessions', async (req, res) => {
-      const result = await sessionsCollection.find().toArray()
-      res.send(result)
-    })
+      const { email } = req.query;
+      if (!email) {
+        return res.status(400).send({ message: 'Email query parameter is required' });
+      }
+      // No status filter: return all sessions for this tutor
+      const result = await sessionsCollection.find({ tutorEmail: email }).toArray();
+      res.send(result);
+    });
 
     // POST: Create a new study session
     app.post('/sessions', async (req, res) => {
@@ -222,6 +234,27 @@ async function run() {
         res.status(500).send({ message: 'Failed to create session' });
       }
     });
+
+    // PATCH: Update session status by ID
+    app.patch('/sessions/:id/status', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body;
+        if (!status) return res.status(400).send({ message: 'Status is required' });
+        const result = await sessionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update session status' });
+      }
+    });
+
+    // **End Of The API**
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
