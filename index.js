@@ -215,6 +215,20 @@ async function run() {
       res.send(result);
     });
 
+    // GET: Get a single session by ID
+    app.get('/sessions/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const session = await sessionsCollection.findOne({ _id: new ObjectId(id) });
+        if (!session) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+        res.send(session);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch session' });
+      }
+    });
+
     // POST: Create a new study session
     app.post('/sessions', async (req, res) => {
       try {
@@ -232,6 +246,24 @@ async function run() {
       } catch (error) {
         console.error('Error creating session:', error);
         res.status(500).send({ message: 'Failed to create session' });
+      }
+    });
+
+    // PUT: Update a session by ID
+    app.put('/sessions/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        const result = await sessionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update session' });
       }
     });
 
@@ -253,6 +285,23 @@ async function run() {
         res.status(500).send({ message: 'Failed to update session status' });
       }
     });
+
+    // DELETE: Delete a session by ID
+    app.delete('/sessions/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await sessionsCollection.deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to delete session' });
+      }
+    });
+
+
+
 
     // **End Of The API**
 
