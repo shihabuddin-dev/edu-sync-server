@@ -99,6 +99,28 @@ async function run() {
       }
     });
 
+    // GET: Get user by _id (admin only)
+    app.get('/users/:id', verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!id) {
+          return res.status(400).send({ message: 'User id is required' });
+        }
+        let user;
+        try {
+          user = await usersCollection.findOne({ _id: new ObjectId(id) });
+        } catch (e) {
+          return res.status(400).send({ message: 'Invalid user id' });
+        }
+        if (!user) {
+          return res.status(404).send({ message: 'User not found' });
+        }
+        res.send(user);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch user by id' });
+      }
+    });
+
 
     // users api
     // verifyFBToken, verifyAdmin,
@@ -259,16 +281,34 @@ async function run() {
 
     // **Sessions**
 
-    // GET: Get all sessions for a tutor by email
-    // verifyFBToken
+    // GET: Get all sessions for a tutor by email, or all sessions for admin
     app.get('/sessions', async (req, res) => {
-      const { email } = req.query;
-      if (!email) {
-        return res.status(400).send({ message: 'Email query parameter is required' });
+      try {
+        const { email } = req.query;
+        let query = {};
+        // If admin, return all sessions
+        if (req.decoded && req.decoded.email) {
+          // Check if admin
+          const user = await usersCollection.findOne({ email: req.decoded.email });
+          if (user && user.role === 'admin') {
+            // If email query param is present, filter by tutorEmail
+            if (email) {
+              query.tutorEmail = email;
+            }
+            // else, query is {} (all sessions)
+          } else {
+            // Not admin: only allow sessions for their own email
+            if (!email || email !== req.decoded.email) {
+              return res.status(403).send({ message: 'forbidden access' });
+            }
+            query.tutorEmail = email;
+          }
+        }
+        const result = await sessionsCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch sessions' });
       }
-      // No status filter: return all sessions for this tutor
-      const result = await sessionsCollection.find({ tutorEmail: email }).toArray();
-      res.send(result);
     });
 
     // GET: Get a single session by ID
@@ -305,8 +345,37 @@ async function run() {
       }
     });
 
-    // PUT: Update a session by ID
-    app.put('/sessions/:id', async (req, res) => {
+    // PATCH: Update session status by ID (approve/reject, set paid/registrationFee)
+    app.patch('/sessions/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status, paid, registrationFee } = req.body;
+        if (!status) return res.status(400).send({ message: 'Status is required' });
+
+        const updateDoc = { status };
+        if (status === 'approved') {
+          updateDoc.paid = !!paid;
+          updateDoc.registrationFee = paid ? Number(registrationFee) : 0;
+        }
+        if (status === 'rejected') {
+          // Optionally, add a rejectedAt timestamp or other logic
+        }
+
+        const result = await sessionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateDoc }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update session status' });
+      }
+    });
+
+    // PUT: Update a session by ID (for admin update)
+    app.put('/sessions/:id', verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const updateData = req.body;
@@ -323,27 +392,8 @@ async function run() {
       }
     });
 
-    // PATCH: Update session status by ID
-    app.patch('/sessions/:id/status', async (req, res) => {
-      try {
-        const { id } = req.params;
-        const { status } = req.body;
-        if (!status) return res.status(400).send({ message: 'Status is required' });
-        const result = await sessionsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { status } }
-        );
-        if (result.matchedCount === 0) {
-          return res.status(404).send({ message: 'Session not found' });
-        }
-        res.send({ success: true });
-      } catch (error) {
-        res.status(500).send({ message: 'Failed to update session status' });
-      }
-    });
-
     // DELETE: Delete a session by ID
-    app.delete('/sessions/:id', async (req, res) => {
+    app.delete('/sessions/:id', verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
         const result = await sessionsCollection.deleteOne({ _id: new ObjectId(id) });
