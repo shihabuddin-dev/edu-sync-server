@@ -37,6 +37,7 @@ async function run() {
     const notesCollection = db.collection("notes");
     const sessionsCollection = db.collection("sessions");
     const materialsCollection = db.collection("materials");
+    const announcementsCollection = db.collection("announcements");
 
     // custom middlewares
     const verifyFBToken = async (req, res, next) => {
@@ -282,7 +283,7 @@ async function run() {
     // **Sessions**
 
     // GET: Get all sessions for a tutor by email, or all sessions for admin
-    app.get('/sessions', async (req, res) => {
+    app.get('/sessions', verifyFBToken, async (req, res) => {
       try {
         const { email } = req.query;
         let query = {};
@@ -407,28 +408,7 @@ async function run() {
     });
 
     // **materials**
-    // CREATE: Upload a new material for a session
-    app.post('/materials', async (req, res) => {
-      try {
-        const { title, sessionId, tutorEmail, imageUrl, resourceLink } = req.body;
-        if (!title || !sessionId || !tutorEmail || !imageUrl || !resourceLink) {
-          return res.status(400).send({ message: 'All fields are required' });
-        }
-        const material = {
-          title,
-          sessionId, // string, references the study session
-          tutorEmail, // string, the tutor's email
-          imageUrl,   // string, link to image (e.g. from ImgBB)
-          resourceLink, // string, Google Drive link
-          created_at: new Date().toISOString(),
-        };
-        const result = await materialsCollection.insertOne(material);
-        res.send({ success: true, materialId: result.insertedId });
-      } catch (error) {
-        res.status(500).send({ message: 'Failed to upload material' });
-      }
-    });
-
+   
     // READ: Get all materials, or filter by sessionId or tutorEmail
     app.get('/materials', async (req, res) => {
       try {
@@ -457,6 +437,28 @@ async function run() {
       }
     });
 
+     // CREATE: Upload a new material for a session
+     app.post('/materials', async (req, res) => {
+      try {
+        const { title, sessionId, tutorEmail, imageUrl, resourceLink } = req.body;
+        if (!title || !sessionId || !tutorEmail || !imageUrl || !resourceLink) {
+          return res.status(400).send({ message: 'All fields are required' });
+        }
+        const material = {
+          title,
+          sessionId, // string, references the study session
+          tutorEmail, // string, the tutor's email
+          imageUrl,   // string, link to image (e.g. from ImgBB)
+          resourceLink, // string, Google Drive link
+          created_at: new Date().toISOString(),
+        };
+        const result = await materialsCollection.insertOne(material);
+        res.send({ success: true, materialId: result.insertedId });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to upload material' });
+      }
+    });
+    
     // UPDATE: Update a material by ID
     app.put('/materials/:id', async (req, res) => {
       try {
@@ -489,6 +491,41 @@ async function run() {
       }
     });
 
+    // **Announcements**
+
+    // GET: Get all announcements
+    app.get('/announcements', async (req, res) => {
+      try {
+        const announcements = await announcementsCollection.find({}).toArray();
+        res.send(announcements);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch announcements' });
+      }
+    });
+
+    // POST: Create a new announcement (admin only)
+    app.post('/announcements', verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        const { title, message, category, audience, priority, link, imageUrl } = req.body;
+        if (!title || !message) {
+          return res.status(400).send({ message: 'Title and message are required' });
+        }
+        const announcement = {
+          title,
+          message,
+          category: category || '',
+          audience: audience || '',
+          priority: priority || '',
+          link: link || '',
+          imageUrl: imageUrl || '',
+          created_at: new Date().toISOString(),
+        };
+        const result = await announcementsCollection.insertOne(announcement);
+        res.send({ success: true, announcementId: result.insertedId });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to create announcement' });
+      }
+    });
 
     // **End Of The API**
 
