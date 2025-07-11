@@ -7,7 +7,6 @@ const port = process.env.PORT || 3000;
 const admin = require("firebase-admin");
 
 // const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
-
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -19,7 +18,6 @@ const serviceAccount = JSON.parse(decodedKey)
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
-
 
 // mongoDB
 const client = new MongoClient(process.env.MONGODB_URI, {
@@ -103,10 +101,28 @@ async function run() {
 
 
     // users api
-    app.get('/users', async (req, res) => {
-      const result = await usersCollection.find().toArray()
-      res.send(result)
-    })
+    // verifyFBToken, verifyAdmin,
+    app.get('/users',verifyFBToken,verifyAdmin, async (req, res) => {
+      try {
+        const { search } = req.query;
+        let query = {};
+        if (search) {
+          query = {
+            $or: [
+              { name: { $regex: search, $options: 'i' } },
+              { displayName: { $regex: search, $options: 'i' } },
+              { email: { $regex: search, $options: 'i' } }
+            ]
+          };
+        }
+        
+        const result = await usersCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).send({ message: 'Failed to fetch users' });
+      }
+    });
 
     // Add or update the POST /users endpoint to enforce default role 'student'
     app.post('/users', async (req, res) => {
@@ -119,16 +135,55 @@ async function run() {
         if (!userData.role) {
           userData.role = 'student';
         }
+        // Prepare user document with all fields
+        const userDocument = {
+          email: userData.email,
+          name: userData.name || userData.displayName || '',
+          photoURL: userData.photoURL || '',
+          role: userData.role,
+          created_at: userData.created_at || new Date().toISOString(),
+          last_log_in: userData.last_log_in || new Date().toISOString(),
+        };
         // Upsert user (update if exists, insert if not)
         const result = await usersCollection.updateOne(
           { email: userData.email },
-          { $setOnInsert: userData },
+          { $setOnInsert: userDocument },
           { upsert: true }
         );
         res.send({ success: true, result });
       } catch (error) {
         console.error('Error creating user:', error);
         res.status(500).send({ message: 'Failed to create user' });
+      }
+    });
+
+    // PATCH: Update user role
+    app.patch('/users/:email/role', verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        const { email } = req.params;
+        const { role } = req.body;
+        
+        if (!email || !role) {
+          return res.status(400).send({ message: 'Email and role are required' });
+        }
+        
+        if (!['admin', 'tutor', 'student'].includes(role)) {
+          return res.status(400).send({ message: 'Invalid role. Must be admin, tutor, or student' });
+        }
+        
+        const result = await usersCollection.updateOne(
+          { email },
+          { $set: { role } }
+        );
+        
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'User not found' });
+        }
+        
+        res.send({ success: true, message: 'User role updated successfully' });
+      } catch (error) {
+        console.error('Error updating user role:', error);
+        res.status(500).send({ message: 'Failed to update user role' });
       }
     });
 
