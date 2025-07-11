@@ -102,7 +102,7 @@ async function run() {
 
     // users api
     // verifyFBToken, verifyAdmin,
-    app.get('/users',verifyFBToken,verifyAdmin, async (req, res) => {
+    app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const { search } = req.query;
         let query = {};
@@ -115,7 +115,7 @@ async function run() {
             ]
           };
         }
-        
+
         const result = await usersCollection.find(query).toArray();
         res.send(result);
       } catch (error) {
@@ -162,24 +162,24 @@ async function run() {
       try {
         const { email } = req.params;
         const { role } = req.body;
-        
+
         if (!email || !role) {
           return res.status(400).send({ message: 'Email and role are required' });
         }
-        
+
         if (!['admin', 'tutor', 'student'].includes(role)) {
           return res.status(400).send({ message: 'Invalid role. Must be admin, tutor, or student' });
         }
-        
+
         const result = await usersCollection.updateOne(
           { email },
           { $set: { role } }
         );
-        
+
         if (result.matchedCount === 0) {
           return res.status(404).send({ message: 'User not found' });
         }
-        
+
         res.send({ success: true, message: 'User role updated successfully' });
       } catch (error) {
         console.error('Error updating user role:', error);
