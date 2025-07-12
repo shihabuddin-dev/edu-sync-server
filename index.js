@@ -281,33 +281,50 @@ async function run() {
 
 
     // **Sessions**
+    
+    // GET: Public route for available study sessions (limit 6, only approved)
+    app.get('/available-sessions', async (req, res) => {
+      try {
+        const sessions = await sessionsCollection
+          .find({ status: 'approved' })
+          .sort({ registrationEnd: 1 }) // soonest closing first
+          .limit(8)
+          .project({ title: 1, description: 1, registrationStart: 1, registrationEnd: 1, sessionImage: 1, tutorName: 1, duration: 1 })
+          .toArray();
+
+        res.send(sessions);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch available sessions' });
+      }
+    });
 
     // GET: Get all sessions for a tutor by email, or all sessions for admin
     app.get('/sessions', verifyFBToken, async (req, res) => {
       try {
         const { email } = req.query;
+        const userEmail = req.decoded.email;
         let query = {};
-        // If admin, return all sessions
-        if (req.decoded && req.decoded.email) {
-          // Check if admin
-          const user = await usersCollection.findOne({ email: req.decoded.email });
-          if (user && user.role === 'admin') {
-            // If email query param is present, filter by tutorEmail
-            if (email) {
-              query.tutorEmail = email;
-            }
-            // else, query is {} (all sessions)
-          } else {
-            // Not admin: only allow sessions for their own email
-            if (!email || email !== req.decoded.email) {
-              return res.status(403).send({ message: 'forbidden access' });
-            }
+        
+        // Check if user is admin
+        const user = await usersCollection.findOne({ email: userEmail });
+        if (user && user.role === 'admin') {
+          // Admin can see all sessions or filter by specific tutor email
+          if (email) {
             query.tutorEmail = email;
           }
+          // else, query is {} (all sessions for admin)
+        } else if (user && user.role === 'tutor') {
+          // Tutor can only see their own sessions
+          query.tutorEmail = userEmail;
+        } else {
+          // Students or other roles cannot access sessions
+          return res.status(403).send({ message: 'forbidden access' });
         }
+        
         const result = await sessionsCollection.find(query).toArray();
         res.send(result);
       } catch (error) {
+        console.error('Error fetching sessions:', error);
         res.status(500).send({ message: 'Failed to fetch sessions' });
       }
     });
@@ -346,7 +363,7 @@ async function run() {
       }
     });
 
-    // PATCH: Update session status by ID (approve/reject, set paid/registrationFee)
+    // PATCH: Update session status by ID (approve/reject, set paid/registrationFee) - ADMIN ONLY
     app.patch('/sessions/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
@@ -372,6 +389,45 @@ async function run() {
         res.send({ success: true });
       } catch (error) {
         res.status(500).send({ message: 'Failed to update session status' });
+      }
+    });
+
+    // PATCH: Resubmit rejected session (TUTOR ONLY)
+    app.patch('/sessions/:id/resubmit', verifyFBToken, verifyTutor, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const userEmail = req.decoded.email;
+
+        // First, check if the session exists and belongs to this tutor
+        const session = await sessionsCollection.findOne({ _id: new ObjectId(id) });
+        if (!session) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+
+        // Verify the session belongs to the requesting tutor
+        if (session.tutorEmail !== userEmail) {
+          return res.status(403).send({ message: 'You can only resubmit your own sessions' });
+        }
+
+        // Only allow resubmission if the session is currently rejected
+        if (session.status !== 'rejected') {
+          return res.status(400).send({ message: 'Only rejected sessions can be resubmitted' });
+        }
+
+        // Update the session status to pending
+        const result = await sessionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: 'pending' } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+
+        res.send({ success: true, message: 'Session resubmitted successfully' });
+      } catch (error) {
+        console.error('Error resubmitting session:', error);
+        res.status(500).send({ message: 'Failed to resubmit session' });
       }
     });
 
@@ -526,6 +582,7 @@ async function run() {
         res.status(500).send({ message: 'Failed to create announcement' });
       }
     });
+
 
     // **End Of The API**
 
