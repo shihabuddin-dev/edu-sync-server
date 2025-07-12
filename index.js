@@ -281,8 +281,8 @@ async function run() {
 
 
     // **Sessions**
-    
-    // GET: Public route for available study sessions (limit 6, only approved)
+
+    // GET: Public route for available study sessions (limit , only approved)
     app.get('/available-sessions', async (req, res) => {
       try {
         const sessions = await sessionsCollection
@@ -298,13 +298,27 @@ async function run() {
       }
     });
 
+    // Public: Get all study sessions (no auth, show all statuses, hide tutorEmail)
+    app.get('/public-sessions', async (req, res) => {
+      try {
+        const sessions = await sessionsCollection
+          .find({})
+          .project({ tutorEmail: 0 })
+          .sort({ registrationEnd: 1 })
+          .toArray();
+        res.send(sessions);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch sessions' });
+      }
+    });
+
     // GET: Get all sessions for a tutor by email, or all sessions for admin
     app.get('/sessions', verifyFBToken, async (req, res) => {
       try {
         const { email } = req.query;
         const userEmail = req.decoded.email;
         let query = {};
-        
+
         // Check if user is admin
         const user = await usersCollection.findOne({ email: userEmail });
         if (user && user.role === 'admin') {
@@ -320,7 +334,7 @@ async function run() {
           // Students or other roles cannot access sessions
           return res.status(403).send({ message: 'forbidden access' });
         }
-        
+
         const result = await sessionsCollection.find(query).toArray();
         res.send(result);
       } catch (error) {
@@ -464,7 +478,7 @@ async function run() {
     });
 
     // **materials**
-   
+
     // READ: Get all materials, or filter by sessionId or tutorEmail
     app.get('/materials', async (req, res) => {
       try {
@@ -493,8 +507,8 @@ async function run() {
       }
     });
 
-     // CREATE: Upload a new material for a session
-     app.post('/materials', async (req, res) => {
+    // CREATE: Upload a new material for a session
+    app.post('/materials', async (req, res) => {
       try {
         const { title, sessionId, tutorEmail, imageUrl, resourceLink } = req.body;
         if (!title || !sessionId || !tutorEmail || !imageUrl || !resourceLink) {
@@ -514,7 +528,7 @@ async function run() {
         res.status(500).send({ message: 'Failed to upload material' });
       }
     });
-    
+
     // UPDATE: Update a material by ID
     app.put('/materials/:id', async (req, res) => {
       try {
@@ -582,6 +596,7 @@ async function run() {
         res.status(500).send({ message: 'Failed to create announcement' });
       }
     });
+
 
 
     // **End Of The API**
