@@ -298,16 +298,35 @@ async function run() {
       }
     });
 
-    // Public: Get all study sessions (no auth, show all statuses, hide tutorEmail)
+    // Public: Get all study sessions with pagination (no auth, show all statuses, hide tutorEmail)
     app.get('/public-sessions', async (req, res) => {
       try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 8;
+        const skip = (page - 1) * limit;
+
+        // Get total count for pagination
+        const totalItems = await sessionsCollection.countDocuments({});
+        const totalPages = Math.ceil(totalItems / limit);
+
+        // Get paginated sessions
         const sessions = await sessionsCollection
           .find({})
           .project({ tutorEmail: 0 })
           .sort({ registrationEnd: 1 })
+          .skip(skip)
+          .limit(limit)
           .toArray();
-        res.send(sessions);
+
+        res.send({
+          sessions,
+          totalPages,
+          totalItems,
+          currentPage: page,
+          itemsPerPage: limit
+        });
       } catch (error) {
+        console.error('Error fetching sessions:', error);
         res.status(500).send({ message: 'Failed to fetch sessions' });
       }
     });
