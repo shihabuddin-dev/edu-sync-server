@@ -484,7 +484,7 @@ async function run() {
       }
     });
 
-    // DELETE: Delete a session by ID
+    // DELETE: Delete a session by ID (admin only)
     app.delete('/sessions/:id', verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
@@ -494,6 +494,34 @@ async function run() {
         }
         res.send({ success: true });
       } catch (error) {
+        res.status(500).send({ message: 'Failed to delete session' });
+      }
+    });
+
+    // DELETE: Delete own session by ID (tutor only)
+    app.delete('/sessions/:id/own', verifyFBToken, verifyTutor, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const userEmail = req.decoded.email;
+        
+        // First check if the session exists and belongs to this tutor
+        const session = await sessionsCollection.findOne({ _id: new ObjectId(id) });
+        if (!session) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+        
+        // Verify the session belongs to the requesting tutor
+        if (session.tutorEmail !== userEmail) {
+          return res.status(403).send({ message: 'You can only delete your own sessions' });
+        }
+        
+        const result = await sessionsCollection.deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        console.error('Error deleting session:', error);
         res.status(500).send({ message: 'Failed to delete session' });
       }
     });
