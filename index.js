@@ -808,6 +808,33 @@ async function run() {
       }
     });
 
+    // DELETE: Cancel a booking by ID (student only)
+app.delete('/bookedSessions/:id/cancel', verifyFBToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userEmail = req.decoded.email;
+
+    // Find booking and verify ownership
+    const booking = await bookedSessionsCollection.findOne({ _id: new ObjectId(id) });
+    if (!booking) {
+      return res.status(404).send({ message: 'Booking not found' });
+    }
+    if (booking.studentEmail !== userEmail) {
+      return res.status(403).send({ message: 'You can only cancel your own bookings' });
+    }
+
+    // Delete the booking
+    const result = await bookedSessionsCollection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: 'Booking not found' });
+    }
+
+    res.send({ success: true });
+  } catch (error) {
+    console.error('Error cancelling booking:', error);
+    res.status(500).send({ message: 'Failed to cancel booking' });
+  }
+});
     // **Payments API**
 
     // GET: Get payment history for a user
