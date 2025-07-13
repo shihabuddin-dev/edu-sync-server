@@ -6,7 +6,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const admin = require("firebase-admin");
 
-// const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
+const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -38,6 +38,8 @@ async function run() {
     const sessionsCollection = db.collection("sessions");
     const materialsCollection = db.collection("materials");
     const announcementsCollection = db.collection("announcements");
+    const bookedSessionsCollection = db.collection("bookedSessions");
+    const paymentsCollection = db.collection("payments");
 
     // custom middlewares
     const verifyFBToken = async (req, res, next) => {
@@ -613,6 +615,262 @@ async function run() {
         res.send({ success: true, announcementId: result.insertedId });
       } catch (error) {
         res.status(500).send({ message: 'Failed to create announcement' });
+      }
+    });
+
+    // **Bookings API**
+
+    // GET: Get all bookings (admin only)
+    app.get('/bookedSessions', verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        const bookings = await bookedSessionsCollection.find({}).toArray();
+        res.send(bookings);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch bookings' });
+      }
+    });
+
+    // GET: Get bookings by student email
+    app.get('/bookedSessions/student/:email', verifyFBToken, async (req, res) => {
+      try {
+        const { email } = req.params;
+        const userEmail = req.decoded.email;
+
+        // Students can only see their own bookings
+        if (email !== userEmail) {
+          return res.status(403).send({ message: 'You can only view your own bookings' });
+        }
+
+        const bookings = await bookedSessionsCollection.find({ studentEmail: email }).toArray();
+        res.send(bookings);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch bookings' });
+      }
+    });
+
+    // GET: Get a single booking by ID
+    app.get('/bookedSessions/:id', verifyFBToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const userEmail = req.decoded.email;
+
+        const booking = await bookedSessionsCollection.findOne({ _id: new ObjectId(id) });
+
+        if (!booking) {
+          return res.status(404).send({ message: 'Booking not found' });
+        }
+
+        // Students can only see their own bookings
+        if (booking.studentEmail !== userEmail) {
+          return res.status(403).send({ message: 'You can only view your own bookings' });
+        }
+
+        res.send(booking);
+      } catch (error) {
+        console.error('Error fetching booking:', error);
+        res.status(500).send({ message: 'Failed to fetch booking' });
+      }
+    });
+
+    // POST: Create a new booking
+    app.post('/bookedSessions', verifyFBToken, async (req, res) => {
+      try {
+        const { sessionId, studentEmail, amount, paymentStatus, paymentMethod } = req.body;
+        const userEmail = req.decoded.email;
+
+        // Verify the booking is for the authenticated user
+        if (studentEmail !== userEmail) {
+          return res.status(403).send({ message: 'You can only book sessions for yourself' });
+        }
+
+        if (!sessionId || !studentEmail || amount === undefined) {
+          return res.status(400).send({ message: 'Session ID, student email, and amount are required' });
+        }
+
+        // Check if session exists and is approved
+        const session = await sessionsCollection.findOne({ _id: new ObjectId(sessionId) });
+        if (!session) {
+          return res.status(404).send({ message: 'Session not found' });
+        }
+
+        if (session.status !== 'approved') {
+          return res.status(400).send({ message: 'Session is not available for booking' });
+        }
+
+        // Check if registration is still open
+        const now = new Date();
+        const regStart = new Date(session.registrationStart);
+        const regEnd = new Date(session.registrationEnd);
+        if (now < regStart || now > regEnd) {
+          return res.status(400).send({ message: 'Registration period is not open' });
+        }
+
+        // Check if student already booked this session
+        const existingBooking = await bookedSessionsCollection.findOne({
+          sessionId: sessionId,
+          studentEmail: studentEmail
+        });
+
+        if (existingBooking) {
+          return res.status(400).send({ message: 'You have already booked this session' });
+        }
+
+        const booking = {
+          sessionId,
+          studentEmail,
+          amount: Number(amount),
+          paymentStatus: paymentStatus || 'pending',
+          paymentMethod: paymentMethod || 'card',
+          bookedAt: new Date().toISOString(),
+          sessionDetails: {
+            title: session.title,
+            tutorName: session.tutorName,
+            classStart: session.classStart,
+            classEnd: session.classEnd,
+            duration: session.duration
+          }
+        };
+
+        const result = await bookedSessionsCollection.insertOne(booking);
+        res.send({ success: true, bookingId: result.insertedId });
+      } catch (error) {
+        console.error('Error creating booking:', error);
+        res.status(500).send({ message: 'Failed to create booking' });
+      }
+    });
+
+    // PATCH: Update booking payment status
+    app.patch('/bookedSessions/:id/payment', verifyFBToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { paymentStatus, transactionId } = req.body;
+        const userEmail = req.decoded.email;
+
+        if (!paymentStatus) {
+          return res.status(400).send({ message: 'Payment status is required' });
+        }
+
+        // Find booking and verify ownership
+        const booking = await bookedSessionsCollection.findOne({ _id: new ObjectId(id) });
+        if (!booking) {
+          return res.status(404).send({ message: 'Booking not found' });
+        }
+
+        if (booking.studentEmail !== userEmail) {
+          return res.status(403).send({ message: 'You can only update your own bookings' });
+        }
+
+        const updateData = { paymentStatus };
+        if (transactionId) {
+          updateData.transactionId = transactionId;
+        }
+
+        const result = await bookedSessionsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Booking not found' });
+        }
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update booking payment status' });
+      }
+    });
+
+    // **Payments API**
+
+    // GET: Get payment history for a user
+    app.get('/payments', verifyFBToken, async (req, res) => {
+      try {
+        const userEmail = req.query.email;
+        console.log('decoded', req.decoded);
+        if (req.decoded.email !== userEmail) {
+          return res.status(403).send({ message: 'forbidden access' });
+        }
+
+        const query = userEmail ? { email: userEmail } : {};
+        const options = { sort: { paid_at: -1 } }; // Latest first
+
+        const payments = await paymentsCollection.find(query, options).toArray();
+        res.send(payments);
+      } catch (error) {
+        console.error('Error fetching payment history:', error);
+        res.status(500).send({ message: 'Failed to get payments' });
+      }
+    });
+
+    // POST: Record payment and update booking status
+    app.post('/payments', verifyFBToken, async (req, res) => {
+      try {
+        const { bookingId, email, amount, paymentMethod, transactionId } = req.body;
+
+        // 1. Update booking's payment status
+        const updateResult = await bookedSessionsCollection.updateOne(
+          { _id: new ObjectId(bookingId) },
+          {
+            $set: {
+              paymentStatus: 'completed',
+              transactionId: transactionId
+            }
+          }
+        );
+
+        if (updateResult.modifiedCount === 0) {
+          return res.status(404).send({ message: 'Booking not found or already paid' });
+        }
+
+        // 2. Insert payment record
+        const paymentDoc = {
+          bookingId,
+          email,
+          amount,
+          paymentMethod,
+          transactionId,
+          paid_at_string: new Date().toISOString(),
+          paid_at: new Date(),
+        };
+
+        const paymentResult = await paymentsCollection.insertOne(paymentDoc);
+
+        res.status(201).send({
+          message: 'Payment recorded and booking marked as paid',
+          insertedId: paymentResult.insertedId,
+        });
+
+      } catch (error) {
+        console.error('Payment processing failed:', error);
+        res.status(500).send({ message: 'Failed to record payment' });
+      }
+    });
+
+    // POST: Create payment intent for Stripe
+    app.post('/create-payment-intent', async (req, res) => {
+      try {
+        const { amountInCents } = req.body;
+
+        if (!amountInCents || amountInCents <= 0) {
+          return res.status(400).json({ error: 'Invalid amount' });
+        }
+
+        console.log('Creating payment intent for amount:', amountInCents, 'cents');
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amountInCents, // Amount in cents
+          currency: 'usd',
+          payment_method_types: ['card'],
+          metadata: {
+            integration_check: 'accept_a_payment',
+          },
+        });
+
+        console.log('Payment intent created:', paymentIntent.id);
+        res.json({ clientSecret: paymentIntent.client_secret });
+      } catch (error) {
+        console.error('Error creating payment intent:', error);
+        res.status(500).json({ error: error.message });
       }
     });
 
