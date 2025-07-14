@@ -40,6 +40,7 @@ async function run() {
     const announcementsCollection = db.collection("announcements");
     const bookedSessionsCollection = db.collection("bookedSessions");
     const paymentsCollection = db.collection("payments");
+    const reviewsCollection = db.collection("reviews");
 
     // custom middlewares
     const verifyFBToken = async (req, res, next) => {
@@ -929,7 +930,140 @@ app.delete('/bookedSessions/:id/cancel', verifyFBToken, async (req, res) => {
       }
     });
 
+    // **Reviews API**
 
+    // GET: Get reviews for a specific session
+    app.get('/reviews/session/:sessionId', async (req, res) => {
+      try {
+        const { sessionId } = req.params;
+        
+        if (!sessionId) {
+          return res.status(400).send({ message: 'Session ID is required' });
+        }
+
+        const reviews = await reviewsCollection
+          .find({ sessionId })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(reviews);
+      } catch (error) {
+        console.error('Error fetching reviews:', error);
+        res.status(500).send({ message: 'Failed to fetch reviews' });
+      }
+    });
+
+    // POST: Submit a new review
+    app.post('/reviews', verifyFBToken, async (req, res) => {
+      try {
+        const { sessionId, studentName, studentEmail, studentPhoto, isVerified, rating, comment } = req.body;
+        const userEmail = req.decoded.email;
+
+        // Validate required fields
+        if (!sessionId || !rating || !comment) {
+          return res.status(400).send({ message: 'Session ID, rating, and comment are required' });
+        }
+
+        if (rating < 1 || rating > 5) {
+          return res.status(400).send({ message: 'Rating must be between 1 and 5' });
+        }
+
+        // Check if user has already reviewed this session
+        const existingReview = await reviewsCollection.findOne({
+          sessionId,
+          studentEmail: userEmail
+        });
+
+        if (existingReview) {
+          return res.status(400).send({ message: 'You have already reviewed this session' });
+        }
+
+        // Create review document
+        const reviewDoc = {
+          sessionId,
+          studentName: studentName || 'Anonymous',
+          studentEmail: userEmail,
+          studentPhoto: studentPhoto || null,
+          isVerified: isVerified || false,
+          rating: parseInt(rating),
+          comment: comment.trim(),
+          createdAt: new Date().toISOString(),
+          created_at: new Date()
+        };
+
+        const result = await reviewsCollection.insertOne(reviewDoc);
+
+        res.status(201).send({
+          success: true,
+          reviewId: result.insertedId,
+          message: 'Review submitted successfully'
+        });
+
+      } catch (error) {
+        console.error('Error submitting review:', error);
+        res.status(500).send({ message: 'Failed to submit review' });
+      }
+    });
+
+    // GET: Get all reviews (admin only)
+    app.get('/reviews', verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        const { sessionId, search } = req.query;
+        let query = {};
+
+        if (sessionId) {
+          query.sessionId = sessionId;
+        }
+
+        if (search) {
+          query.$or = [
+            { studentName: { $regex: search, $options: 'i' } },
+            { comment: { $regex: search, $options: 'i' } }
+          ];
+        }
+
+        const reviews = await reviewsCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(reviews);
+      } catch (error) {
+        console.error('Error fetching all reviews:', error);
+        res.status(500).send({ message: 'Failed to fetch reviews' });
+      }
+    });
+
+    // DELETE: Delete a review (admin only or review owner)
+    app.delete('/reviews/:id', verifyFBToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const userEmail = req.decoded.email;
+
+        // Find the review
+        const review = await reviewsCollection.findOne({ _id: new ObjectId(id) });
+        if (!review) {
+          return res.status(404).send({ message: 'Review not found' });
+        }
+
+        // Check if user is admin or review owner
+        const user = await usersCollection.findOne({ email: userEmail });
+        if (!user || (user.role !== 'admin' && review.studentEmail !== userEmail)) {
+          return res.status(403).send({ message: 'You can only delete your own reviews or must be admin' });
+        }
+
+        const result = await reviewsCollection.deleteOne({ _id: new ObjectId(id) });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: 'Review not found' });
+        }
+
+        res.send({ success: true, message: 'Review deleted successfully' });
+      } catch (error) {
+        console.error('Error deleting review:', error);
+        res.status(500).send({ message: 'Failed to delete review' });
+      }
+    });
 
     // **End Of The API**
 
