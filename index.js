@@ -42,6 +42,7 @@ async function run() {
     const paymentsCollection = db.collection("payments");
     const reviewsCollection = db.collection("reviews");
 
+
     // custom middlewares
     const verifyFBToken = async (req, res, next) => {
       const authHeader = req.headers.authorization;
@@ -210,6 +211,53 @@ async function run() {
       } catch (error) {
         console.error('Error updating user role:', error);
         res.status(500).send({ message: 'Failed to update user role' });
+      }
+    });
+
+    // **Tutors**
+
+    // Public: Get all tutors (users with role 'tutor')
+    app.get('/tutors', async (req, res) => {
+      try {
+        // Exclude the email field from the result
+        const tutors = await usersCollection.find(
+          { role: 'tutor' },
+          { projection: { email: 0 } }
+        ).toArray();
+        res.send(tutors);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch tutors' });
+      }
+    });
+    // **Students**
+
+    // Public: Get all students (users with role 'student') with pagination
+    app.get('/students', verifyFBToken, async (req, res) => {
+      try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // Get total count for pagination
+        const totalItems = await usersCollection.countDocuments({ role: 'student' });
+        const totalPages = Math.ceil(totalItems / limit);
+
+        // Get paginated students
+        const students = await usersCollection
+          .find({ role: 'student' })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        res.send({
+          students,
+          totalPages,
+          totalItems,
+          currentPage: page,
+          itemsPerPage: limit
+        });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch students' });
       }
     });
 
@@ -504,18 +552,18 @@ async function run() {
       try {
         const { id } = req.params;
         const userEmail = req.decoded.email;
-        
+
         // First check if the session exists and belongs to this tutor
         const session = await sessionsCollection.findOne({ _id: new ObjectId(id) });
         if (!session) {
           return res.status(404).send({ message: 'Session not found' });
         }
-        
+
         // Verify the session belongs to the requesting tutor
         if (session.tutorEmail !== userEmail) {
           return res.status(403).send({ message: 'You can only delete your own sessions' });
         }
-        
+
         const result = await sessionsCollection.deleteOne({ _id: new ObjectId(id) });
         if (result.deletedCount === 0) {
           return res.status(404).send({ message: 'Session not found' });
@@ -810,32 +858,32 @@ async function run() {
     });
 
     // DELETE: Cancel a booking by ID (student only)
-app.delete('/bookedSessions/:id/cancel', verifyFBToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userEmail = req.decoded.email;
+    app.delete('/bookedSessions/:id/cancel', verifyFBToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const userEmail = req.decoded.email;
 
-    // Find booking and verify ownership
-    const booking = await bookedSessionsCollection.findOne({ _id: new ObjectId(id) });
-    if (!booking) {
-      return res.status(404).send({ message: 'Booking not found' });
-    }
-    if (booking.studentEmail !== userEmail) {
-      return res.status(403).send({ message: 'You can only cancel your own bookings' });
-    }
+        // Find booking and verify ownership
+        const booking = await bookedSessionsCollection.findOne({ _id: new ObjectId(id) });
+        if (!booking) {
+          return res.status(404).send({ message: 'Booking not found' });
+        }
+        if (booking.studentEmail !== userEmail) {
+          return res.status(403).send({ message: 'You can only cancel your own bookings' });
+        }
 
-    // Delete the booking
-    const result = await bookedSessionsCollection.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) {
-      return res.status(404).send({ message: 'Booking not found' });
-    }
+        // Delete the booking
+        const result = await bookedSessionsCollection.deleteOne({ _id: new ObjectId(id) });
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: 'Booking not found' });
+        }
 
-    res.send({ success: true });
-  } catch (error) {
-    console.error('Error cancelling booking:', error);
-    res.status(500).send({ message: 'Failed to cancel booking' });
-  }
-});
+        res.send({ success: true });
+      } catch (error) {
+        console.error('Error cancelling booking:', error);
+        res.status(500).send({ message: 'Failed to cancel booking' });
+      }
+    });
     // **Payments API**
 
     // GET: Get payment history for a user
@@ -936,7 +984,7 @@ app.delete('/bookedSessions/:id/cancel', verifyFBToken, async (req, res) => {
     app.get('/reviews/session/:sessionId', async (req, res) => {
       try {
         const { sessionId } = req.params;
-        
+
         if (!sessionId) {
           return res.status(400).send({ message: 'Session ID is required' });
         }
