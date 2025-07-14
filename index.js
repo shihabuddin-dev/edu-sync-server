@@ -131,20 +131,31 @@ async function run() {
     // verifyFBToken, verifyAdmin,
     app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
       try {
-        const { search } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
+        const skip = (page - 1) * limit;
+        const { search, role } = req.query;
         let query = {};
         if (search) {
-          query = {
-            $or: [
-              { name: { $regex: search, $options: 'i' } },
-              { displayName: { $regex: search, $options: 'i' } },
-              { email: { $regex: search, $options: 'i' } }
-            ]
-          };
+          query.$or = [
+            { name: { $regex: search, $options: 'i' } },
+            { displayName: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } }
+          ];
         }
-
-        const result = await usersCollection.find(query).toArray();
-        res.send(result);
+        if (role && role !== 'all') {
+          query.role = role;
+        }
+        const totalItems = await usersCollection.countDocuments(query);
+        const totalPages = Math.ceil(totalItems / limit);
+        const users = await usersCollection.find(query).skip(skip).limit(limit).toArray();
+        res.send({
+          users,
+          totalPages,
+          totalItems,
+          currentPage: page,
+          itemsPerPage: limit
+        });
       } catch (error) {
         console.error('Error fetching users:', error);
         res.status(500).send({ message: 'Failed to fetch users' });
@@ -451,16 +462,23 @@ async function run() {
     app.patch('/sessions/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
-        const { status, paid, registrationFee } = req.body;
+        const { status, paid, registrationFee, reason, feedback } = req.body;
         if (!status) return res.status(400).send({ message: 'Status is required' });
 
         const updateDoc = { status };
         if (status === 'approved') {
           updateDoc.paid = !!paid;
           updateDoc.registrationFee = paid ? Number(registrationFee) : 0;
+          updateDoc.rejectionReason = '';
+          updateDoc.rejectionFeedback = '';
         }
         if (status === 'rejected') {
-          // Optionally, add a rejectedAt timestamp or other logic
+          updateDoc.rejectionReason = reason || '';
+          updateDoc.rejectionFeedback = feedback || '';
+        }
+        if (status === 'pending') {
+          updateDoc.rejectionReason = '';
+          updateDoc.rejectionFeedback = '';
         }
 
         const result = await sessionsCollection.updateOne(
