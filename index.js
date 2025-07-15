@@ -286,7 +286,7 @@ async function run() {
     });
 
     // POST: Create a new note
-    app.post('/notes',verifyFBToken, async (req, res) => {
+    app.post('/notes', verifyFBToken, async (req, res) => {
       try {
         const { email, title, description, created_at } = req.body;
         if (!email || !title || !description) {
@@ -302,7 +302,7 @@ async function run() {
     });
 
     // DELETE: Delete a note by ID
-    app.delete('/notes/:id',verifyFBToken, async (req, res) => {
+    app.delete('/notes/:id', verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const result = await notesCollection.deleteOne({ _id: new ObjectId(id) });
@@ -317,7 +317,7 @@ async function run() {
     });
 
     // PATCH: Update a note by ID
-    app.patch('/notes/:id',verifyFBToken, async (req, res) => {
+    app.patch('/notes/:id', verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { title, description } = req.body;
@@ -438,7 +438,7 @@ async function run() {
     });
 
     // POST: Create a new study session
-    app.post('/sessions',verifyFBToken, async (req, res) => {
+    app.post('/sessions', verifyFBToken, async (req, res) => {
       try {
         const session = req.body;
         // Basic validation
@@ -595,7 +595,7 @@ async function run() {
     // **materials**
 
     // READ: Get all materials, or filter by sessionId or tutorEmail
-    app.get('/materials', verifyFBToken,async (req, res) => {
+    app.get('/materials', verifyFBToken, async (req, res) => {
       try {
         const { sessionId, tutorEmail } = req.query;
         const query = {};
@@ -609,7 +609,7 @@ async function run() {
     });
 
     // READ: Get a single material by ID
-    app.get('/materials/:id',verifyFBToken, async (req, res) => {
+    app.get('/materials/:id', verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const material = await materialsCollection.findOne({ _id: new ObjectId(id) });
@@ -623,7 +623,7 @@ async function run() {
     });
 
     // CREATE: Upload a new material for a session
-    app.post('/materials',verifyFBToken, async (req, res) => {
+    app.post('/materials', verifyFBToken, async (req, res) => {
       try {
         const { title, sessionId, tutorEmail, imageUrl, resourceLink } = req.body;
         if (!title || !sessionId || !tutorEmail || !imageUrl || !resourceLink) {
@@ -645,7 +645,7 @@ async function run() {
     });
 
     // UPDATE: Update a material by ID
-    app.put('/materials/:id',verifyFBToken, async (req, res) => {
+    app.put('/materials/:id', verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const updateData = req.body;
@@ -663,7 +663,7 @@ async function run() {
     });
 
     // DELETE: Delete a material by ID
-    app.delete('/materials/:id',verifyFBToken, async (req, res) => {
+    app.delete('/materials/:id', verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const result = await materialsCollection.deleteOne({ _id: new ObjectId(id) });
