@@ -286,7 +286,7 @@ async function run() {
     });
 
     // POST: Create a new note
-    app.post('/notes', async (req, res) => {
+    app.post('/notes',verifyFBToken, async (req, res) => {
       try {
         const { email, title, description, created_at } = req.body;
         if (!email || !title || !description) {
@@ -302,7 +302,7 @@ async function run() {
     });
 
     // DELETE: Delete a note by ID
-    app.delete('/notes/:id', async (req, res) => {
+    app.delete('/notes/:id',verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const result = await notesCollection.deleteOne({ _id: new ObjectId(id) });
@@ -317,7 +317,7 @@ async function run() {
     });
 
     // PATCH: Update a note by ID
-    app.patch('/notes/:id', async (req, res) => {
+    app.patch('/notes/:id',verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const { title, description } = req.body;
@@ -351,9 +351,8 @@ async function run() {
           .find({ status: 'approved' })
           .sort({ registrationEnd: 1 }) // soonest closing first
           .limit(8)
-          .project({ title: 1, description: 1, registrationStart: 1, registrationEnd: 1, sessionImage: 1, tutorName: 1, duration: 1 })
+          .project({ title: 1, description: 1, registrationFee: 1, registrationStart: 1, registrationEnd: 1, sessionImage: 1, tutorName: 1, duration: 1 })
           .toArray();
-
         res.send(sessions);
       } catch (error) {
         res.status(500).send({ message: 'Failed to fetch available sessions' });
@@ -439,7 +438,7 @@ async function run() {
     });
 
     // POST: Create a new study session
-    app.post('/sessions', async (req, res) => {
+    app.post('/sessions',verifyFBToken, async (req, res) => {
       try {
         const session = req.body;
         // Basic validation
@@ -596,7 +595,7 @@ async function run() {
     // **materials**
 
     // READ: Get all materials, or filter by sessionId or tutorEmail
-    app.get('/materials', async (req, res) => {
+    app.get('/materials', verifyFBToken,async (req, res) => {
       try {
         const { sessionId, tutorEmail } = req.query;
         const query = {};
@@ -610,7 +609,7 @@ async function run() {
     });
 
     // READ: Get a single material by ID
-    app.get('/materials/:id', async (req, res) => {
+    app.get('/materials/:id',verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const material = await materialsCollection.findOne({ _id: new ObjectId(id) });
@@ -624,7 +623,7 @@ async function run() {
     });
 
     // CREATE: Upload a new material for a session
-    app.post('/materials', async (req, res) => {
+    app.post('/materials',verifyFBToken, async (req, res) => {
       try {
         const { title, sessionId, tutorEmail, imageUrl, resourceLink } = req.body;
         if (!title || !sessionId || !tutorEmail || !imageUrl || !resourceLink) {
@@ -646,7 +645,7 @@ async function run() {
     });
 
     // UPDATE: Update a material by ID
-    app.put('/materials/:id', async (req, res) => {
+    app.put('/materials/:id',verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const updateData = req.body;
@@ -664,7 +663,7 @@ async function run() {
     });
 
     // DELETE: Delete a material by ID
-    app.delete('/materials/:id', async (req, res) => {
+    app.delete('/materials/:id',verifyFBToken, async (req, res) => {
       try {
         const { id } = req.params;
         const result = await materialsCollection.deleteOne({ _id: new ObjectId(id) });
@@ -1131,13 +1130,43 @@ async function run() {
       }
     });
 
-    // **End Of The API**
+    // GET: Admin statistics (admin only)
+    app.get('/admin/statistics', verifyFBToken, verifyAdmin, async (req, res) => {
+      try {
+        // Total users
+        const totalUsers = await usersCollection.countDocuments({});
+        // Total tutors
+        const totalTutors = await usersCollection.countDocuments({ role: 'tutor' });
+        // Total students
+        const totalStudents = await usersCollection.countDocuments({ role: 'student' });
+        // Total sessions
+        const totalSessions = await sessionsCollection.countDocuments({});
+        // Total bookings
+        const totalBookings = await bookedSessionsCollection.countDocuments({});
+        // Average rating (across all reviews)
+        const allReviews = await reviewsCollection.find({}).toArray();
+        const averageRating = allReviews.length > 0
+          ? (allReviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0) / allReviews.length).toFixed(2)
+          : 0;
+
+        res.send({
+          totalUsers,
+          totalTutors,
+          totalStudents,
+          totalSessions,
+          totalBookings,
+          averageRating
+        });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch admin statistics' });
+      }
+    });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
   }
 }
