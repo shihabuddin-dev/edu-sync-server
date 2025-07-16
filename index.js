@@ -399,14 +399,13 @@ async function run() {
         const userEmail = req.decoded.email;
         let query = {};
 
-        // Check if user is admin
+        // Check if user is admin or tutor
         const user = await usersCollection.findOne({ email: userEmail });
         if (user && user.role === 'admin') {
           // Admin can see all sessions or filter by specific tutor email
           if (email) {
             query.tutorEmail = email;
           }
-          // else, query is {} (all sessions for admin)
         } else if (user && user.role === 'tutor') {
           // Tutor can only see their own sessions
           query.tutorEmail = userEmail;
@@ -415,8 +414,28 @@ async function run() {
           return res.status(403).send({ message: 'forbidden access' });
         }
 
-        const result = await sessionsCollection.find(query).toArray();
-        res.send(result);
+        // Pagination
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const totalItems = await sessionsCollection.countDocuments(query);
+        const totalPages = Math.ceil(totalItems / limit);
+
+        const sessions = await sessionsCollection
+          .find(query)
+          .sort({ registrationEnd: 1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        res.send({
+          sessions,
+          totalPages,
+          totalItems,
+          currentPage: page,
+          itemsPerPage: limit
+        });
       } catch (error) {
         console.error('Error fetching sessions:', error);
         res.status(500).send({ message: 'Failed to fetch sessions' });
