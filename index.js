@@ -926,7 +926,7 @@ async function run() {
     app.get('/payments', verifyFBToken, async (req, res) => {
       try {
         const userEmail = req.query.email;
-        console.log('decoded', req.decoded);
+        // console.log('decoded', req.decoded);
         if (req.decoded.email !== userEmail) {
           return res.status(403).send({ message: 'forbidden access' });
         }
@@ -995,7 +995,7 @@ async function run() {
           return res.status(400).json({ error: 'Invalid amount' });
         }
 
-        console.log('Creating payment intent for amount:', amountInCents, 'cents');
+        // console.log('Creating payment intent for amount:', amountInCents, 'cents');
 
         const paymentIntent = await stripe.paymentIntents.create({
           amount: amountInCents, // Amount in cents
@@ -1006,7 +1006,7 @@ async function run() {
           },
         });
 
-        console.log('Payment intent created:', paymentIntent.id);
+        // console.log('Payment intent created:', paymentIntent.id);
         res.json({ clientSecret: paymentIntent.client_secret });
       } catch (error) {
         console.error('Error creating payment intent:', error);
