@@ -372,7 +372,7 @@ async function run() {
 
         // Get paginated sessions
         const sessions = await sessionsCollection
-          .find({})
+          .find({ status: 'approved' })
           .project({ tutorEmail: 0 })
           .sort({ registrationEnd: 1 })
           .skip(skip)
