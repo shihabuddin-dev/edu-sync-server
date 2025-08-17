@@ -129,12 +129,26 @@ async function run() {
 
     // users api
     // verifyFBToken, verifyAdmin,
-    app.get('/users', verifyFBToken, verifyAdmin, async (req, res) => {
+    app.get('/users', verifyFBToken, async (req, res) => {
       try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 5;
+        const { search, role, page: pageQuery, limit: limitQuery } = req.query;
+        const requesterEmail = req.decoded.email;
+        const requester = await usersCollection.findOne({ email: requesterEmail });
+
+        // If a specific user is being searched for by email, and it's the requester's email
+        if (search && search === requesterEmail && !role && !pageQuery && !limitQuery) {
+          const user = await usersCollection.findOne({ email: search });
+          return res.send({ users: user ? [user] : [] });
+        }
+
+        // Admin-only access for full user list
+        if (!requester || requester.role !== 'admin') {
+          return res.status(403).send({ message: 'forbidden access' });
+        }
+
+        const page = parseInt(pageQuery) || 1;
+        const limit = parseInt(limitQuery) || 5;
         const skip = (page - 1) * limit;
-        const { search, role } = req.query;
         let query = {};
         if (search) {
           query.$or = [
@@ -192,6 +206,57 @@ async function run() {
       } catch (error) {
         console.error('Error creating user:', error);
         res.status(500).send({ message: 'Failed to create user' });
+      }
+    });
+
+    // PUT: Update user by _id (for profile editing)
+    app.put('/users/:id', verifyFBToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+        const requesterEmail = req.decoded.email;
+
+        // Find the user to be updated
+        let userToUpdate;
+        try {
+          userToUpdate = await usersCollection.findOne({ _id: new ObjectId(id) });
+        } catch (e) {
+          return res.status(400).send({ message: 'Invalid user id' });
+        }
+
+        if (!userToUpdate) {
+          return res.status(404).send({ message: 'User not found' });
+        }
+
+        // Check if the requester is the user being updated
+        if (userToUpdate.email !== requesterEmail) {
+          // If not, check if the requester is an admin
+          const requester = await usersCollection.findOne({ email: requesterEmail });
+          if (!requester || requester.role !== 'admin') {
+            return res.status(403).send({ message: 'You are not authorized to update this profile.' });
+          }
+        }
+
+        // Only allow updating certain fields
+        const allowedFields = ['photoURL', 'phoneNumber', 'address', 'website', 'linkedin', 'github', 'facebook', 'bio', 'name', 'displayName'];
+        const setDoc = {};
+        for (const key of allowedFields) {
+          if (updateData[key] !== undefined) setDoc[key] = updateData[key];
+        }
+        if (Object.keys(setDoc).length === 0) {
+          return res.status(400).send({ message: 'No valid fields to update' });
+        }
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: setDoc }
+        );
+        if (result.matchedCount === 0) {
+          // This case should ideally not be reached due to the check above, but as a safeguard:
+          return res.status(404).send({ message: 'User not found' });
+        }
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update user' });
       }
     });
 
